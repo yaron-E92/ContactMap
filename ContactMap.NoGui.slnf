@@ -1,0 +1,16 @@
+{
+  "solution": {
+    "path": "ContactMap.sln",
+    "projects": [
+      "ContactMap.Application.Tests\\ContactMap.Application.Tests.csproj",
+      "ContactMap.Application\\ContactMap.Application.csproj",
+      "ContactMap.Domain.Tests\\ContactMap.Domain.Tests.csproj",
+      "ContactMap.Domain\\ContactMap.Domain.csproj",
+      "ContactMap.Infrastructure.Tests\\ContactMap.Infrastructure.Tests.csproj",
+      "ContactMap.Infrastructure\\ContactMap.Infrastructure.csproj",
+      "ContactMap.IntegrationTests\\ContactMap.IntegrationTests.csproj",
+      "ContactMap.WebApi.Tests\\ContactMap.WebApi.Tests.csproj",
+      "ContactMap.WebApi\\ContactMap.WebApi.csproj"
+    ]
+  }
+}

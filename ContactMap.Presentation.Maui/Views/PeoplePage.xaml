@@ -1,0 +1,17 @@
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ContactMap.Presentation.Maui.Views.PeoplePage"
+             xmlns:viewmodels="clr-namespace:ContactMap.Presentation.Maui.ViewModels"
+             xmlns:entities="clr-namespace:ContactMap.Domain.Entities;assembly=ContactMap.Domain"
+             x:DataType="viewmodels:MainMapViewModel">
+    <StackLayout>
+        <SearchBar x:Name="SearchBar" Placeholder="Search people or community..." />
+        <ListView x:Name="PeopleListView">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="entities:Person">
+                    <TextCell Text="{Binding Name}" Detail="{Binding Address.City}" />
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </StackLayout>
+</ContentPage>

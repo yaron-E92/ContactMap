@@ -1,0 +1,48 @@
+name: Run Integration Tests (Manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Ensure GitHub NuGet Source
+        run: |
+          dotnet nuget add source https://nuget.pkg.github.com/yaron-E92/index.json \
+            -n github \
+            -u Yaron-E92 \
+            -p ${{ secrets.YARE92_NUGET_TOKEN_EXP_17JUN2026 }} \
+            --store-password-in-clear-text
+        continue-on-error: true
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        id: build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Integration Tests
+        run: dotnet test ContactMap.IntegrationTests/ContactMap.IntegrationTests.csproj --configuration Release --no-build --logger "trx" --filter TestCategory=Integration
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: ${{steps.build.outcome == 'success'}}
+        with:
+          files: ContactMap.IntegrationTests/TestResults/*.trx
+          check_name: "Integration tests Results"

@@ -30,6 +30,23 @@ jobs:
             --store-password-in-clear-text
         continue-on-error: true
 
+      - name: Install workload
+        run: |
+          dotnet workload install maui-android wasi-experimental
+          if [ $? -ne 0 ]; then
+            echo "::error::Failed to install workloads"
+            exit 1
+          fi
+
+      - name: Setup Android SDK
+        run: |
+          echo "Checking GUI changes: ${{needs.checkWhetherGUIBuildNeeded.outputs.diff}}"
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "tools"
+          if [ $? -ne 0 ]; then
+            echo "::error::Failed to setup Android SDK"
+            exit 1
+          fi
+
       - name: Restore dependencies
         run: dotnet restore
 

@@ -74,12 +74,12 @@ jobs:
           --store-password-in-clear-text
 
     - name: Restore Dependencies
-      run: dotnet restore ContactMap.NoGUI.slnf
+      run: dotnet restore ContactMap.NoGui.slnf
 
     - name: Build
       id: build
       run: |
-        dotnet build -c NoGUI --no-restore ContactMap.NoGUI.slnf
+        dotnet build -c NoGUI --no-restore ContactMap.NoGui.slnf
         if [ $? -ne 0 ]; then
           echo "::error::Build failed"
           exit 1
@@ -91,7 +91,7 @@ jobs:
           /p:AssemblyVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} \
           /p:FileVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} \
           /p:InformationalVersion=${{ needs.gitVersion.outputs.informationalVersion }} \
-          ContactMap.NoGUI.slnf
+          ContactMap.NoGui.slnf
         if [ $? -ne 0 ]; then
           echo "::error::Tests failed"
           exit 1

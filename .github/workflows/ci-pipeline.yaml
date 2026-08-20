@@ -58,10 +58,10 @@ jobs:
         mkdir -p ContactMap.Presentation.Maui/Platforms/Android/Resources/values
         printf '%s\n' '<resources><string name="google_maps_key">ci-placeholder</string></resources>' > ContactMap.Presentation.Maui/Platforms/Android/Resources/values/google_maps_secrets.xml
       android_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj
-      android_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net8.0-android --no-restore
+      android_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-android --no-restore
       android_test_command: |
         set -euo pipefail
-        find ContactMap.Presentation.Maui/bin/Release/net8.0-android -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
+        find ContactMap.Presentation.Maui/bin/Release/net10.0-android -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
 
       windows_enabled: true
       windows_runner: windows-latest
@@ -70,10 +70,10 @@ jobs:
         bash scripts/ci-configure-nuget.sh
         dotnet workload install maui --skip-manifest-update
       windows_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --runtime win-x64
-      windows_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net8.0-windows10.0.19041.0 --runtime win-x64 --no-restore
+      windows_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-windows10.0.19041.0 --runtime win-x64 --no-restore
       windows_test_command: |
         set -euo pipefail
-        find ContactMap.Presentation.Maui/bin/Release/net8.0-windows10.0.19041.0 -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
+        find ContactMap.Presentation.Maui/bin/Release/net10.0-windows10.0.19041.0 -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
     secrets:
       nuget_token: ${{ secrets.GITHUB_TOKEN }}
     permissions:

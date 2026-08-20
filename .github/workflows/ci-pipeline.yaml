@@ -1,330 +1,102 @@
-# This workflow will build and test a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
-
-name: Continuous integration pipeline
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  gitVersion:
-    name: Determine Version
-    runs-on: ubuntu-latest
-    outputs:
-      branchName: ${{ steps.gitversion.outputs.branchName }}
-      semVer: ${{ steps.gitversion.outputs.semVer }}
-      sha: ${{ steps.gitversion.outputs.sha }}
-      nugetVersion: ${{ steps.gitversion.outputs.nuGetVersion }}
-      assemblySemFileVer: ${{ steps.gitversion.outputs.assemblySemFileVer }}
-      informationalVersion: ${{ steps.gitversion.outputs.informationalVersion }}
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
-
-    - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v1.1.1
-      with:
-        versionSpec: '5.x'
-        preferLatestVersion: true
-
-    - name: Determine Version
-      id: gitversion
-      uses: gittools/actions/gitversion/execute@v1.1.1
-      with:
-        additionalArguments: '/updateprojectfiles'
-        useConfigFile: true
-        configFilePath: '.github/GitVersion.yaml'
-
-  buildAndTestWithoutGUI:
-    name: Build and Test (No GUI)
-    needs: [gitVersion]
-    runs-on: ubuntu-latest
+  baseline:
+    name: Shared workflow policy
+    uses: yaron-E92/AutoDev/.github/workflows/profile-baseline.yml@7190410c74ab6674d1c8cc647b178bbc4b5cdd54
+    with:
+      require_concurrency: true
     permissions:
-      checks: write
-      pull-requests: write
+      contents: read
+
+  product:
+    name: Shared .NET + MAUI validation
+    needs: [baseline]
+    uses: yaron-E92/AutoDev/.github/workflows/profile-maui.yml@7190410c74ab6674d1c8cc647b178bbc4b5cdd54
+    with:
+      global_json_file: global.json
+
+      headless_enabled: true
+      headless_runner: ubuntu-latest
+      headless_setup_command: bash scripts/ci-configure-nuget.sh
+      headless_restore_command: dotnet restore ContactMap.NoGui.slnf
+      headless_build_command: dotnet build ContactMap.NoGui.slnf --configuration Release --no-restore
+      headless_test_command: |
+        set -euo pipefail
+        mkdir -p artifacts/ci/headless
+        dotnet test ContactMap.NoGui.slnf \
+          --configuration Release \
+          --no-build \
+          --no-restore \
+          --logger trx \
+          --results-directory artifacts/ci/headless
+        if ! grep -R -Eq '<Counters[^>]*total="[1-9][0-9]*"' artifacts/ci/headless --include='*.trx'; then
+          echo "Headless validation executed zero tests." >&2
+          exit 1
+        fi
+      headless_test_results_path: artifacts/ci/headless/**/*.trx
+
+      android_enabled: true
+      android_runner: ubuntu-latest
+      android_setup_command: |
+        set -euo pipefail
+        bash scripts/ci-configure-nuget.sh
+        dotnet workload install maui-android --skip-manifest-update
+        mkdir -p ContactMap.Presentation.Maui/Platforms/Android/Resources/values
+        printf '%s\n' '<resources><string name="google_maps_key">ci-placeholder</string></resources>' > ContactMap.Presentation.Maui/Platforms/Android/Resources/values/google_maps_secrets.xml
+      android_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --runtime android-arm64
+      android_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-android --runtime android-arm64 --no-restore
+      android_test_command: |
+        set -euo pipefail
+        find ContactMap.Presentation.Maui/bin/Release/net10.0-android -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
+
+      windows_enabled: true
+      windows_runner: windows-latest
+      windows_setup_command: |
+        set -euo pipefail
+        bash scripts/ci-configure-nuget.sh
+        dotnet workload install maui-windows --skip-manifest-update
+      windows_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --runtime win-x64 -p:ContactMapWindowsOnly=true
+      windows_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-windows10.0.19041.0 --runtime win-x64 --no-restore -p:ContactMapWindowsOnly=true -p:WindowsPackageType=None -p:WindowsAppSdkDeploymentManagerInitialize=false
+      windows_test_command: |
+        set -euo pipefail
+        find ContactMap.Presentation.Maui/bin/Release/net10.0-windows10.0.19041.0 -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
+    secrets:
+      nuget_token: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
       contents: read
       packages: read
 
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
-
-    - name: Setup .NET
-      id: setupDotnet
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-
-    - name: Ensure GitHub NuGet Source
-      run: |
-        dotnet nuget add source https://nuget.pkg.github.com/yaron-E92/index.json \
-          -n github \
-          -u Yaron-E92 \
-          -p ${{ secrets.YARE92_NUGET_TOKEN_EXP_17JUN2026 }} \
-          --store-password-in-clear-text
-
-    - name: Restore Dependencies
-      run: dotnet restore ContactMap.NoGUI.slnf
-
-    - name: Build
-      id: build
-      run: |
-        dotnet build -c NoGUI --no-restore ContactMap.NoGUI.slnf
-        if [ $? -ne 0 ]; then
-          echo "::error::Build failed"
-          exit 1
-        fi
-
-    - name: Test
-      run: |
-        dotnet test --logger "trx" --no-build -c NoGUI --verbosity normal \
-          /p:AssemblyVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} \
-          /p:FileVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} \
-          /p:InformationalVersion=${{ needs.gitVersion.outputs.informationalVersion }} \
-          ContactMap.NoGUI.slnf
-        if [ $? -ne 0 ]; then
-          echo "::error::Tests failed"
-          exit 1
-        fi
-
-    - name: Publish Test Results
-      uses: EnricoMi/publish-unit-test-result-action@v2
-      if: ${{steps.build.outcome == 'success'}}
-      with:
-        files: |
-          ./**/TestResults/*.xml
-          ./**/TestResults/*.trx
-          ./**/TestResults/*.json
-        check_name: "Test Results (No GUI)"
-
-  checkWhetherGUIBuildNeeded:
-    name: Check GUI Build Requirements
-    needs: [gitVersion]
-    runs-on: ubuntu-latest
-    outputs:
-      diff: ${{steps.checkDiff.outputs.diff}}
-      override: ${{steps.determineOverride.outputs.override}}
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
-
-    - name: Check diff
-      id: checkDiff
-      run: |
-        DIFF=$(git diff origin/main HEAD -- src/ContactMap.Prentation.MAUI/**/*.cs src/ContactMap.Prentation.MAUI/*.cs src/ContactMap.Prentation.MAUI/**/*.xaml src/ContactMap.Prentation.MAUI/*.xaml | head -n 1)
-        echo "diff=$DIFF" >> $GITHUB_OUTPUT
-        echo "Diff found: $DIFF"
-
-    - name: Check for override in PR description
-      id: checkOverridePR
-      if: contains(needs.gitVersion.outputs.branchName, 'pull')
-      env:
-        PR_DESCRIPTION: ${{ github.event.pull_request.body }}
-      run: |
-        guiLine=$(awk -F'+includeGUI: ' '{print $2}' <<< $PR_DESCRIPTION | xargs)
-        echo "guiLine=$guiLine" >> $GITHUB_OUTPUT
-        echo "PR GUI override: $guiLine"
-
-    - name: Check for override in merge commit
-      if: contains(needs.gitVersion.outputs.branchName, 'main')
-      id: checkOverrideMerge
-      env:
-        MERGE_COMMIT: ${{ github.event.head_commit.message }}
-      run: |
-        guiLine=$(awk -F'+includeGUI: ' '{print $2}' <<< $MERGE_COMMIT | xargs)
-        echo "guiLine=$guiLine" >> $GITHUB_OUTPUT
-        echo "Merge GUI override: $guiLine"
-
-    - name: Determine override
-      id: determineOverride
-      if: |
-        steps.checkOverridePR.outputs.guiLine != '' ||
-        steps.checkOverrideMerge.outputs.guiLine != ''
-      env:
-        PR_GUILINE: ${{steps.checkOverridePR.outputs.guiLine}}
-        MERGE_GUILINE: ${{steps.checkOverrideMerge.outputs.guiLine}}
-      run: |
-        if [[ "$PR_GUILINE" == "false" || "$MERGE_GUILINE" == "false" ]]; then
-          echo "override=false" >> $GITHUB_OUTPUT
-        elif [[ "$PR_GUILINE" == "true" || "$MERGE_GUILINE" == "true" ]]; then
-          echo "override=true" >> $GITHUB_OUTPUT
-        else
-          echo "override=" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Echo override
-      id: echoOverride
-      if: |
-        steps.checkOverridePR.outputs.guiLine != '' ||
-        steps.checkOverrideMerge.outputs.guiLine != ''
-      run: |
-        echo "Final override value: ${{ steps.determineOverride.outputs.override }}"
-
-  buildAndTestGUI:
-    name: Build and Test GUI
-    needs: [checkWhetherGUIBuildNeeded]
-    if: |
-      (needs.checkWhetherGUIBuildNeeded.outputs.diff != '' &&
-      needs.checkWhetherGUIBuildNeeded.outputs.override != 'false') ||
-      needs.checkWhetherGUIBuildNeeded.outputs.override == 'true'
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs: [baseline, product]
     runs-on: ubuntu-latest
     permissions:
-      checks: write
-      pull-requests: write
       contents: read
-      packages: read
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
-
-    - name: Setup .NET
-      id: setupDotnet
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-
-    - name: Ensure GitHub NuGet Source
-      run: |
-        dotnet nuget add source https://nuget.pkg.github.com/yaron-E92/index.json \
-          -n github \
-          -u Yaron-E92 \
-          -p ${{ secrets.YARE92_NUGET_TOKEN_EXP_17JUN2026 }} \
-          --store-password-in-clear-text
-
-    - name: Install workload
-      run: |
-        dotnet workload install maui-android wasi-experimental
-        if [ $? -ne 0 ]; then
-          echo "::error::Failed to install workloads"
-          exit 1
-        fi
-
-    - name: Setup Android SDK
-      run: |
-        echo "Checking GUI changes: ${{needs.checkWhetherGUIBuildNeeded.outputs.diff}}"
-        /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "tools"
-        if [ $? -ne 0 ]; then
-          echo "::error::Failed to setup Android SDK"
-          exit 1
-        fi
-
-    - name: Restore dependencies
-      run: |
-        dotnet restore ./ContactMap.Prentation.MAUI/ContactMap.Prentation.MAUI.csproj
-        if [ $? -ne 0 ]; then
-          echo "::error::Failed to restore dependencies"
-          exit 1
-        fi
-
-    - name: Create Google Maps secrets file
-      run: |
-        echo '<resources><string name="google_maps_key'>${{ secrets.GOOGLE_MAPS_KEY }}</string></resources>' > ContactMap.Presentation.Maui/Platforms/Android/Resources/values/google_maps_secrets.xml
-
-    - name: Build
-      id: build
-      run: |
-        dotnet build --no-restore ./ContactMap.Prentation.MAUI/ContactMap.Prentation.MAUI.csproj
-        if [ $? -ne 0 ]; then
-          echo "::error::Build failed"
-          exit 1
-        fi
-
-    - name: Test
-      run: |
-        dotnet test ./ContactMap.Prentation.MAUI/ContactMap.Prentation.MAUI.csproj --logger "trx" --no-build --verbosity normal \
-          /p:AssemblyVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} \
-          /p:FileVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} \
-          /p:InformationalVersion=${{ needs.gitVersion.outputs.informationalVersion }}
-        if [ $? -ne 0 ]; then
-          echo "::error::Tests failed"
-          exit 1
-        fi
-
-    - name: Publish Test Results
-      uses: EnricoMi/publish-unit-test-result-action@v2
-      if: ${{steps.build.outcome == 'success'}}
-      with:
-        files: |
-          ./**/TestResults/*.xml
-          ./**/TestResults/*.trx
-          ./**/TestResults/*.json
-        check_name: "Test Results (GUI)"
-
-  tagAndRelease:
-    name: Tag and Release
-    needs: [gitVersion, buildAndTestWithoutGUI, buildAndTestGUI]
-    if:  |
-      (needs.buildAndTestGUI.result == 'skipped' || needs.buildAndTestGUI.result == 'success') &&
-      contains(needs.gitVersion.outputs.branchName, 'main')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Fetch all tags
-      run: git fetch --tags --force
-    - name: Tag on main
-      run: |
-          git config --global user.name "Github actions: gitversion"
-          git config --global user.email "gitversion@github-actions.com"
-          # Check if tag already exists
-          if git rev-parse "${{ needs.gitVersion.outputs.semVer}}" >/dev/null 2>&1; then
-            echo "Tag ${{ needs.gitVersion.outputs.semVer}} already exists, skipping tag creation"
-          else
-            echo "Creating tag ${{ needs.gitVersion.outputs.semVer}}"
-            git tag -a "${{ needs.gitVersion.outputs.semVer}}" -m "Version ${{ needs.gitVersion.outputs.semVer}}"
-            git push --tags
+      - name: Require policy and product validation
+        shell: bash
+        env:
+          BASELINE: ${{ needs.baseline.result }}
+          PRODUCT: ${{ needs.product.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$BASELINE" != "success" || "$PRODUCT" != "success" ]]; then
+            echo "Required ContactMap CI failed: baseline=$BASELINE product=$PRODUCT" >&2
+            exit 1
           fi
-    - name: Check if package version already exists on GitHub Packages
-      id: check-package
-      run: |
-        VERSION="${{ needs.gitVersion.outputs.semVer }}"
-        echo "Checking for version $VERSION of $PACKAGE_NAME"
-    
-        RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github+json" \
-          "https://api.github.com/users/yaron-E92/packages/nuget/Yaref92.Events/versions")
-    
-        EXISTS=$(echo "$RESPONSE" | jq -r --arg VERSION "$VERSION" '.[] | select(.name == $VERSION) | .name')
-    
-        if [[ "$EXISTS" == "$VERSION" ]]; then
-          echo "skip=true" >> $GITHUB_OUTPUT
-          echo "Version $VERSION already exists. Skipping push."
-        else
-          echo "skip=false" >> $GITHUB_OUTPUT
-          echo "Version $VERSION not found. Proceeding with push."
-        fi
-    - name: Pack Nuget
-      if: steps.check-package.outputs.skip == 'false'
-      run: dotnet pack -c Release -o out /p:AssemblyVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} /p:FileVersion=${{ needs.gitVersion.outputs.assemblySemFileVer }} /p:InformationalVersion=${{ needs.gitVersion.outputs.informationalVersion }} /p:Version=${{ needs.gitVersion.outputs.semVer }} /p:PackageVersion=${{ needs.gitVersion.outputs.nugetVersion }} ./Yaref92.Events.sln
-    - name: Release NuGet package
-      if: steps.check-package.outputs.skip == 'false'
-      run: |
-        for file in ./out/*.nupkg; do
-          echo "Pushing $file..."
-          dotnet nuget push "$file" \
-            --api-key ${GITHUB_TOKEN} \
-            --source "https://nuget.pkg.github.com/yaron-E92/index.json" \
-            --skip-duplicate
-        done
-      env:
-        GITHUB_TOKEN: ${{ secrets.YARE92_NUGET_PUSH_TOKEN_EXP_29JUN2026 }}
+          echo "ContactMap authoritative CI passed."

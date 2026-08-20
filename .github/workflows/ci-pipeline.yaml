@@ -69,8 +69,8 @@ jobs:
         set -euo pipefail
         bash scripts/ci-configure-nuget.sh
         dotnet workload install maui-windows --skip-manifest-update
-      windows_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj
-      windows_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-windows10.0.19041.0 --no-restore -p:WindowsPackageType=None -p:WindowsAppSdkDeploymentManagerInitialize=false
+      windows_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --runtime win-x64 -p:ContactMapWindowsOnly=true
+      windows_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-windows10.0.19041.0 --runtime win-x64 --no-restore -p:ContactMapWindowsOnly=true -p:WindowsPackageType=None -p:WindowsAppSdkDeploymentManagerInitialize=false
       windows_test_command: |
         set -euo pipefail
         find ContactMap.Presentation.Maui/bin/Release/net10.0-windows10.0.19041.0 -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .

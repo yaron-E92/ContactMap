@@ -57,8 +57,8 @@ jobs:
         dotnet workload install maui-android --skip-manifest-update
         mkdir -p ContactMap.Presentation.Maui/Platforms/Android/Resources/values
         printf '%s\n' '<resources><string name="google_maps_key">ci-placeholder</string></resources>' > ContactMap.Presentation.Maui/Platforms/Android/Resources/values/google_maps_secrets.xml
-      android_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj
-      android_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-android --no-restore
+      android_restore_command: dotnet restore ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --runtime android-arm64
+      android_build_command: dotnet build ContactMap.Presentation.Maui/ContactMap.Presentation.Maui.csproj --configuration Release --framework net10.0-android --runtime android-arm64 --no-restore
       android_test_command: |
         set -euo pipefail
         find ContactMap.Presentation.Maui/bin/Release/net10.0-android -type f -name 'ContactMap.Presentation.Maui.dll' -print -quit | grep -q .
